@@ -1,6 +1,9 @@
+# Ignore environment files
 .env
-__pycache__/
+
+# Ignore Python cache
 *.pyc
-*.pyo
-*.pyd
-*.sqlite3
+__pycache__/
+
+# Ignore logs
+*.log
