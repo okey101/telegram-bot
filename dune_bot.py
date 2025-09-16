@@ -20,11 +20,22 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DUNE_API_KEY = os.getenv("DUNE_API_KEY")
-TOP_TRADERS_QUERY = int(os.getenv("TOP_TRADERS_QUERY"))
-TRADES_QUERY = int(os.getenv("TRADES_QUERY"))
+TOP_TRADERS_QUERY = int(os.getenv("TOP_TRADERS_QUERY") or "0")
+TRADES_QUERY = int(os.getenv("TRADES_QUERY") or "0")
 
-# Logging
+# Validate required environment variables
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN environment variable is required")
+if not DUNE_API_KEY:
+    raise ValueError("DUNE_API_KEY environment variable is required")
+if TOP_TRADERS_QUERY == 0:
+    raise ValueError("TOP_TRADERS_QUERY environment variable is required")
+if TRADES_QUERY == 0:
+    raise ValueError("TRADES_QUERY environment variable is required")
+
+# Logging - Set WARNING level for httpx to prevent token leakage
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # Conversation states
@@ -41,21 +52,21 @@ HEADERS = {"x-dune-api-key": DUNE_API_KEY, "Content-Type": "application/json"}
 # -------- DUNE HELPERS --------
 def execute_query(query_id: int, params: dict):
     url = f"{BASE_URL}/query/{query_id}/execute"
-    r = requests.post(url, headers=HEADERS, json={"query_parameters": params})
+    r = requests.post(url, headers=HEADERS, json={"query_parameters": params}, timeout=30)
     r.raise_for_status()
     return r.json()
 
 
 def get_status(execution_id: str):
     url = f"{BASE_URL}/execution/{execution_id}/status"
-    r = requests.get(url, headers=HEADERS)
+    r = requests.get(url, headers=HEADERS, timeout=30)
     r.raise_for_status()
     return r.json()
 
 
 def get_results(execution_id: str):
     url = f"{BASE_URL}/execution/{execution_id}/results"
-    r = requests.get(url, headers=HEADERS)
+    r = requests.get(url, headers=HEADERS, timeout=30)
     r.raise_for_status()
     return r.json()
 
@@ -275,8 +286,14 @@ async def cancel_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+# -------- KEEP ALIVE SERVER --------
+from keep_alive import keep_alive
+
 # -------- MAIN --------
 def main():
+    # Start keep-alive server
+    keep_alive()
+    
     app = Application.builder().token(BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
@@ -287,7 +304,7 @@ def main():
             ASK_START: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_end)],
             ASK_END: [MessageHandler(filters.TEXT & ~filters.COMMAND, fetch_trades)]
         },
-        fallbacks=[CallbackQueryHandler(cancel_callback, pattern="^cancel$")],
+        fallbacks=[CallbackQueryHandler(cancel_callback, pattern="^cancel$")]
     )
 
     app.add_handler(CommandHandler("start", start))
